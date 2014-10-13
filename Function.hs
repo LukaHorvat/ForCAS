@@ -3,12 +3,12 @@ module Function where
 import Data.Maybe
 
 data Expression = Expression :*: Expression |
-				  Expression :+: Expression |
-				  Expression :/: Expression |
-				  Expression :-: Expression |
-				  C Float |
-				  Var String
-				  deriving (Show)
+                  Expression :+: Expression |
+                  Expression :/: Expression |
+                  Expression :-: Expression |
+                  C Float |
+                  Var String
+                  deriving (Show)
 
 data Function = Func String Expression
 
@@ -26,4 +26,4 @@ emap f (x :*: y) = swapOrMap f x :*: swapOrMap f y
 emap f (x :+: y) = swapOrMap f x :+: swapOrMap f y
 emap f (x :/: y) = swapOrMap f x :/: swapOrMap f y
 emap f (x :-: y) = swapOrMap f x :-: swapOrMap f y
-emap f x 		 = swapOrKeep f x
+emap f x         = swapOrKeep f x
