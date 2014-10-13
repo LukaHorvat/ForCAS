@@ -2,11 +2,17 @@ module Function where
 
 import Data.Maybe
 
+type Number = Double
+
+data BuiltInFunction = Abs | Sin | Cos | Sgn
+    deriving (Show)
+
 data Expression = Expression :*: Expression |
                   Expression :+: Expression |
                   Expression :/: Expression |
                   Expression :-: Expression |
-                  C Float |
+                  F BuiltInFunction Expression |
+                  C Number |
                   Var String
                   deriving (Show)
 
@@ -27,3 +33,15 @@ emap f (x :+: y) = swapOrMap f x :+: swapOrMap f y
 emap f (x :/: y) = swapOrMap f x :/: swapOrMap f y
 emap f (x :-: y) = swapOrMap f x :-: swapOrMap f y
 emap f x         = swapOrKeep f x
+
+instance Num Expression where
+    (+) = (:+:)
+    (*) = (:*:)
+    abs = F Abs
+    signum = F Sgn
+    fromInteger = C . fromInteger
+    (-) = (:-:)
+
+instance Fractional Expression where
+    fromRational = C . fromRational
+    (/) = (:/:)
