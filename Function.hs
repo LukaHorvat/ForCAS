@@ -7,17 +7,30 @@ data BuiltInFunction = Abs | Sin | Cos | Sgn | Exp | Log | Asin | Acos |
                        deriving (Show)
 
 data BinaryOp = Add | Sub | Mult | Div
-                deriving (Show)
 
 data ExpLeaf a = Const a | Var String
-                 deriving (Show)
 
 data Expression a = Binary BinaryOp (Expression a) (Expression a) |
                     F BuiltInFunction (Expression a) |
                     Leaf (ExpLeaf a)
-                    deriving (Show)
+
+instance Show BinaryOp where
+    show Add = "+"
+    show Sub = "-"
+    show Mult = "*"
+    show Div = "/"
+
+instance Show a => Show (ExpLeaf a) where
+    show (Const x) = show x
+    show (Var s) = s
+
+instance Show a => Show (Expression a) where
+    show (Binary op x y) = "(" ++ show x ++ " " ++ show op ++ " " ++ show y ++ ")"
+    show (F f x) = show f ++ show x
+    show (Leaf e) = show e
 
 data Function a = Func String (Expression a)
+    deriving (Show)
 
 emap :: (ExpLeaf a -> ExpLeaf b) -> Expression a -> Expression b
 emap f (Binary op x y) = Binary op (emap f x) (emap f y)
@@ -34,6 +47,12 @@ var = Leaf . Var
 
 vx :: Expression a
 vx = var "x"
+
+makeBinary :: BinaryOp -> a -> a -> Expression a
+makeBinary op x y = Binary op (Leaf $ Const x) (Leaf $ Const y)
+
+makeUnary :: BuiltInFunction -> a -> Expression a
+makeUnary f x = F f (Leaf $ Const x)
 
 instance Num a => Num (Expression a) where
     (+) = Binary Add
