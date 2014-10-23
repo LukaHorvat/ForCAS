@@ -18,9 +18,21 @@ negate NegInfinity = PosInfinity
 negate (Finite a)  = Finite (-a)
 
 binaryReduce :: RealFloat a => Limit a -> Limit a -> BinaryOp -> Maybe (Limit a)
+{-
+binaryReduce l r Add = case (l, r) of
+    (PosInfinity, PosInfinity) -> Just PosInfinity
+    (PosInfinity, NegInfinity) -> Nothing
+    (PosInfinity, Finite x)    -> PosInfinity
+    (NegInfinity, Finite x)    -> NegInfinity
+    (NegInfinity, NegInfinity) -> NegInfinity
+    (Finite x, Finite y)       -> Finite (x + y)
+    _ -> binaryReduce r l Add
+-}
+
 binaryReduce PosInfinity PosInfinity op = case op of
     Add  -> Just PosInfinity
     Mult -> Just PosInfinity
+    Pow  -> Just PosInfinity
     _    -> Nothing
 binaryReduce PosInfinity NegInfinity op = case op of
     Sub  -> Just PosInfinity
@@ -29,18 +41,27 @@ binaryReduce PosInfinity NegInfinity op = case op of
 binaryReduce NegInfinity PosInfinity op = case op of
     Sub  -> Just NegInfinity
     Mult -> Just NegInfinity
+    Pow  -> error "Negative infinity is out of bounds of the domain of the exponential function base"
     _    -> Nothing
 binaryReduce NegInfinity NegInfinity op = case op of
     Add  -> Just NegInfinity
     Mult -> Just PosInfinity
+    Pow  -> error "Negative infinity is out of bounds of the domain of the exponential function base"
     _    -> Nothing
 binaryReduce (Finite x) PosInfinity op = case op of
     Add              -> Just PosInfinity
     Sub              -> Just NegInfinity
     Mult | x > 0     -> Just PosInfinity 
-         | x == 0    -> Just $ Finite 0 
+         | x == 0    -> Nothing
          | otherwise -> Just NegInfinity
     Div              -> Just $ Finite 0
+    Pow  | x > 0     -> Just PosInfinity
+         | x == 0    -> Nothing
+         | otherwise -> error "Negative values are out of bounds of the domain of the exponential function base"
+binaryReduce (Finite x) NegInfinity Pow
+         | x > 0     -> Just $ Finite 0
+         | x == 0    -> Nothing
+         | otherwise -> error "Negative values are out of bounds of the domain of the exponential function base"
 binaryReduce (Finite x) NegInfinity op = Limit.negate <$> binaryReduce (Finite x) PosInfinity op
 binaryReduce PosInfinity (Finite x) op = case op of
     Add              -> Just PosInfinity
@@ -51,6 +72,10 @@ binaryReduce PosInfinity (Finite x) op = case op of
     Div  | x == 0    -> Nothing 
          | x > 0     -> Just PosInfinity 
          | otherwise -> Just NegInfinity
+    Pow  | x > 0     -> Just PosInfinity
+         | x == 0    -> Nothing
+         | x < 0     -> Just $ Finite 0
+binaryReduce NegInfinity (Finite _) 
 binaryReduce NegInfinity (Finite x) op = Limit.negate <$> binaryReduce PosInfinity (Finite x) op
 binaryReduce (Finite x) (Finite y) op = Just $ Finite $ eval $ makeBinary op x y
 
