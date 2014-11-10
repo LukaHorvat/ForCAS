@@ -7,18 +7,19 @@ type Number = Double
 
 data BuiltInFunction = Abs | Sin | Cos | Sgn | Exp | Log | Asin | Acos | 
                        Sinh | Cosh | Asinh | Atanh | Acosh | Atan | Neg
-                       deriving (Show)
+                       deriving (Show, Eq)
 
 data BinaryOp = Add | Mult | Pow
     deriving (Eq)
 
-data Symbol = Infinity | Pi | E
+data Symbol = Infinity | Pi | E deriving Eq
 
-data ExpLeaf = Const Integer | Var String | Special Symbol
+data ExpLeaf = Const Integer | Var String | Special Symbol deriving Eq
 
 data Expression = Binary BinaryOp Expression Expression |
                   F BuiltInFunction Expression |
                   Leaf ExpLeaf
+                  deriving (Eq)
 
 instance Show BinaryOp where
     show Add  = "+"
@@ -36,7 +37,7 @@ instance Show ExpLeaf where
     show (Special s) = show s
 
 instance Show Expression where
-    show (Binary Mult x (Binary Pow y (F Neg (Leaf (Const 1))))) = "(" ++ show x ++ " / " ++ show y ++ ")"
+    show (x :*: (y :^: Number (-1))) = "(" ++ show x ++ " / " ++ show y ++ ")"
     show (Binary op x y) = "(" ++ show x ++ " " ++ show op ++ " " ++ show y ++ ")"
     show (F f x) = "(" ++ show f ++ " " ++ show x ++ ")"
     show (Leaf e) = show e
@@ -44,9 +45,9 @@ instance Show Expression where
 pattern Number x = Leaf (Const x)
 pattern l :+: r  = Binary Add l r
 pattern l :*: r  = Binary Mult l r
-pattern l :^: r  = Binary Pow l r
-pattern l :/: r  = Binary Mult l (Binary Pow r (F Neg (Leaf (Const (-1)))))
+pattern l :/: r  = l :*: (r :^: (Number (-1)))
 pattern l :-: r  = Binary Add l (F Neg r)
+pattern l :^: r  = Binary Pow l r
 pattern Minus x  = F Neg x
 
 data Function = Func String Expression
@@ -77,13 +78,19 @@ makeUnary f x = F f (Leaf $ Const x)
 fromList :: BinaryOp -> [Expression] -> Expression
 fromList op = foldl1 (Binary op)
 
+neutral :: BinaryOp -> Expression
+neutral Add  = 0
+neutral Mult = 1
+neutral _    = error "Unsupported operation"
+
 instance Num Expression where
     (+) = Binary Add
     (*) = Binary Mult
     abs = F Abs
     signum = F Sgn
     fromInteger = Leaf . Const . fromInteger
-    negate = F Neg
+    negate (Number x) = Number (-x)
+    negate x          = F Neg x
 
 instance Fractional Expression where
     recip = flip (Binary Pow) (-1)
@@ -91,7 +98,8 @@ instance Fractional Expression where
 
 instance Floating Expression where
     pi = Leaf $ Special Pi
-    exp = F Exp
+    exp ((F Log b) :*: p) = b :^: p 
+    exp x = F Exp x
     log = F Log
     sin = F Sin
     cos = F Cos

@@ -1,24 +1,16 @@
+{-# LANGUAGE PatternSynonyms #-}
 module Reduction where
 
+import Data.Maybe
 import Function
+import Debug.Trace
 
-data ReductionForm = Number Integer | Fraction Integer Integer | Complex Expression
-    deriving (Show)
-
-toForm :: Expression -> ReductionForm
-toForm (Leaf (Const x)) = Number x
-toForm (Binary Mult (Leaf (Const x)) (Binary Pow (Leaf (Const y)) (F Neg (Leaf (Const 1))) )) = Fraction x y
-toForm x = Complex x
-
-fromForm :: ReductionForm -> Expression
-fromForm (Number x)     = fromIntegral x
-fromForm (Fraction n d) = fromIntegral n / fromIntegral d
-fromForm (Complex e)    = e
+pattern NumFrac n d = Number n :/: Number d
 
 isConst :: Expression -> Bool
-isConst e = case toForm e of
-    Complex _ -> False
-    _         -> True
+isConst (Number _)    = True
+isConst (NumFrac _ _) = True
+isConst _             = False
 
 isOpString :: BinaryOp -> Expression -> Bool
 isOpString op (Binary bop l r)
@@ -55,48 +47,66 @@ collectOpString _ x = [x]
 --     12     *
 --          3   2
 opwiseReduce :: BinaryOp -> (Expression -> Expression -> Maybe Expression) -> Expression -> Expression -> Expression
-opwiseReduce op f e start = fromList op $ res : unprocessed
+opwiseReduce op f start e = fromList op $ res : unprocessed
     where
         list = collectOpString op e
         folder :: (Expression, [Expression]) -> Expression -> (Expression, [Expression])
-        folder (acc, remainder) expr = case newRes of
+        folder (acc, remainder) expr = case f acc expr of
             Just newAcc -> (newAcc, remainder)
             Nothing -> (acc, expr : remainder)
-            where
-                newRes = f acc e
         (res, unprocessed) = foldl folder (start, []) list
 
-constantFracSimplify :: ReductionForm -> ReductionForm
-constantFracSimplify (Fraction n d) 
-    | g == d    = Number $ n `div` g
-    | otherwise = Fraction (n `div` g) (d `div` g)
-    where
-        g = gcd n d
-constantFracSimplify _              = error "Cannot simplify non-fractions"
+debug :: Show a => a -> a
+debug x = trace (show x) x
+
+try :: (Expression -> Maybe Expression) -> Expression -> Expression
+try f e = fromMaybe e (f e)
+
+symetric :: (Expression -> Maybe Expression) -> Expression -> Expression
+symetric f e@(Binary op x y) = fromMaybe (fromMaybe e (f (Binary op y x))) (f e)
+symetric _ e                 = e
 
 --We do not cover cases that can't be reduced. Those are handled beforehand.
-constantReduce :: BinaryOp -> ReductionForm -> ReductionForm -> ReductionForm
-constantReduce Add  (Number x)     (Number y)     = Number $ x + y
-constantReduce Add  (Fraction n d) (Number x)     = constantFracSimplify $ Fraction (d * x + n) d
-constantReduce Add  x              y              = constantReduce Add y x --Addition is commutative
-constantReduce Mult (Number x)     (Number y)     = Number $ x * y
-constantReduce Mult (Fraction n d) (Number x)     = constantFracSimplify $ Fraction (n * x) d
-constantReduce Mult x              y              = constantReduce Mult y x --Multiplication is commutative
-constantReduce Pow  (Number x)     (Number y)     = Number $ x ^ y
-constantReduce Pow  (Fraction n d) (Number x)     = Fraction (n ^ x) (d ^ x)
-constantReduce Pow  (Number x)     (Fraction n d) = let y = x ^ n in case intRoot d y of
-    Just root -> Number root
-    Nothing   -> Complex $ fromIntegral y ** (1 / fromIntegral d)
-constantReduce _    _              _              = error "Constant reduce given a case it cannot handle"
+constantReduce :: Expression -> Expression
+constantReduce (NumFrac n d)
+    | g == d    = Number $ n `div` g
+    | otherwise = NumFrac (n `div` g) (d `div` g)
+    where g = gcd n d
+constantReduce e@(_ :+: _) = symetric (tryReduce reduceAdd) e where
+    reduceAdd (Number 0)    x          = Just x
+    reduceAdd (Number x)    (Number y) = Just $ Number $ x + y
+    reduceAdd (NumFrac n d) (Number x) = Just $ constantReduce $ NumFrac (d * x + n) d
+    reduceAdd _             _          = Nothing
+constantReduce e@(_ :*: _) = symetric (tryReduce reduceMult) e where
+    reduceMult (Number 0)    _          = Just $ Number 0
+    reduceMult (Number 1)    x          = Just x
+    reduceMult (Number x)    (Number y) = Just $ Number $ x * y
+    reduceMult (NumFrac n d) (Number x) = Just $ constantReduce $ NumFrac (n * x) d
+    reduceMult _             _          = Nothing
+constantReduce e@(_ :^: _) = try (tryReduce reducePow) e where
+    reducePow _ (Number 0) = Just $ Number 1
+    reducePow x (Number 1) = Just x
+    reducePow (b :^: Number p1) (Number p2) = Just $ constantReduce $ b :^: Number (p1 * p2)
+    reducePow b (Number p)
+        | p < 0     = Nothing
+        | otherwise = case b of
+            (Number x)    -> Just $ Number $ x ^ p
+            (NumFrac n d) -> Just $ NumFrac (n ^ p) (d ^ p)
+            _             -> Nothing
+    reducePow _ _   = Nothing
+constantReduce e = e
+
+tryReduce :: (Expression -> Expression -> Maybe Expression) -> Expression -> Maybe Expression
+tryReduce f (Binary _ l r) = f l r
+tryReduce _ _              = Nothing
 
 constExprReduce :: Expression -> Expression
-constExprReduce e@(Binary op l r)
-    | isOpString op e        = opwiseReduce op f 0 e
-    | isConst l && isConst r = fromForm $ constantReduce op (toForm l) (toForm r)
-    | otherwise              = e
+constExprReduce e@(Binary op _ _)
+    | isOpString op e && op `elem` [Add, Mult] = opwiseReduce op f (neutral op) e
+    | otherwise                                = constantReduce e
     where
         f acc new 
-            | isConst new = Just $ fromForm $ constantReduce op (toForm acc) (toForm new)
+            | isConst new = Just $ constantReduce (Binary op acc new)
             | otherwise   = Nothing
 constExprReduce e = e
 
